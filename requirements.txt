@@ -13,5 +13,8 @@ aiosqlite>=0.20
 # 可选：Redis 幂等存储。不装则自动降级到进程内实现
 redis>=5.0
 
+# 数据库迁移。改模型后必须用它，不要指望 create_all 会改已有表结构
+alembic>=1.13
+
 # 测试
 pytest>=8.0

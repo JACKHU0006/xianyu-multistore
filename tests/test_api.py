@@ -19,6 +19,8 @@ from backend.crypto import LocalKeyProvider, configure_provider, content_fingerp
 from backend.main import create_app
 from backend.models import Base, CardPool, FaqRule, Order, Product, Store, Tenant, User
 
+from conftest import db_url
+
 MASTER = generate_master_key()
 PROVIDER = LocalKeyProvider(MASTER)
 
@@ -32,6 +34,9 @@ CARD_PLAIN = "A7F2-9K3M-XQ81-2ZP4"
 async def _seed(url: str) -> None:
     engine = create_async_engine(url)
     async with engine.begin() as conn:
+        # 先 drop 再 create：SQLite 每个用例是独立文件、本来就是空的，
+        # 但 PostgreSQL 模式下所有用例共用同一个库，不清就会撞上上一次的数据。
+        await conn.run_sync(Base.metadata.drop_all)
         await conn.run_sync(Base.metadata.create_all)
 
     factory = async_sessionmaker(engine, expire_on_commit=False)
@@ -67,7 +72,7 @@ async def _seed(url: str) -> None:
 @pytest.fixture
 def client(tmp_path):
     configure_provider(PROVIDER)
-    url = f"sqlite+aiosqlite:///{(tmp_path / 'test.db').as_posix()}"
+    url = db_url(tmp_path, "test.db")
     asyncio.run(_seed(url))
 
     engine = create_async_engine(url, pool_pre_ping=True)
@@ -84,7 +89,7 @@ def client(tmp_path):
 def jwt_client(tmp_path):
     """严格 JWT 模式：没有 Bearer 一律 401。"""
     configure_provider(PROVIDER)
-    url = f"sqlite+aiosqlite:///{(tmp_path / 'jwt.db').as_posix()}"
+    url = db_url(tmp_path, "jwt.db")
     asyncio.run(_seed(url))
 
     engine = create_async_engine(url, pool_pre_ping=True)

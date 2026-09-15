@@ -150,17 +150,35 @@ postgresql+asyncpg://postgres:<密码>@db.<项目ref>.supabase.co:5432/postgres
 
 ### 4.3 建表
 
-在本地对生产库执行一次播种（`seed_demo` 内含 `create_all`）：
+有两条路径，**生产库推荐第 1 条**。
+
+**路径 1：Alembic 迁移（推荐）**
+
+```bash
+export DATABASE_URL="postgresql+asyncpg://..."
+python -m alembic upgrade head      # 建全部表并写入版本号
+python -m alembic current           # 应输出 8e1abc9e67e9 (head)
+```
+
+好处是库里有 `alembic_version` 版本行，以后改表结构直接 `alembic upgrade head` 即可增量升级。
+详见 [迁移手册](MIGRATIONS.md)。
+
+**路径 2：播种脚本（本地开发 / 快速验收）**
+
+`seed_demo` 内含 `create_all`，会建表**并**写入演示数据（租户 t1、账号 `owner`/`demo1234`、
+2 店、2 商品、各 2 张卡密）：
 
 ```bash
 DATABASE_URL="postgresql+asyncpg://..." MASTER_KEY="<你的 MASTER_KEY>" \
   python -m backend.seed_demo
 ```
 
-它会创建全部表并写入演示数据（租户 t1、账号 `owner`/`demo1234`、2 店、2 商品、各 2 张卡密）。
+脚本结尾会自动把库标记到 Alembic 基线（容错：Alembic 未安装或标记失败时只打印提示，
+不影响播种），所以**两条路径不会打架** —— 播种完再执行 `alembic upgrade head` 是安全的空操作。
 
-> **正式环境**：建议用 Alembic 迁移替代 `create_all`，并把演示数据清掉、改掉默认密码。
-> `create_all` **只建不存在的表**，后续改表结构它不会同步，需人工处理。
+> **正式环境注意**：`create_all` **只建不存在的表**，后续改表结构它不会同步。
+> 用了路径 2 上线后，务必把演示数据清掉、改掉默认密码（见 5.x 验收清单）。
+> 之后所有表结构变更都走 Alembic，不要再依赖 `create_all`。
 
 ### 4.4 确认连接池参数
 
@@ -454,11 +472,23 @@ Render 会自动重新部署。也可在 Render 控制台直接选历史部署�
 
 ### 数据库回滚
 
-`create_all` 不支持回滚。改表结构前务必：
+`create_all` 不支持回滚。**表结构变更一律走 Alembic**，这样才能回退：
+
+```bash
+export DATABASE_URL="postgresql+asyncpg://..."
+python -m alembic current                    # 记录当前版本
+python -m alembic downgrade -1               # 退回上一个版本
+python -m alembic downgrade 8e1abc9e67e9     # 或退到指定版本（基线）
+```
+
+即便如此，降级前仍须：
 
 1. 确认 Supabase 有可用备份点
 2. 变更前手动打一个快照
-3. 生产环境引入 Alembic 做版本化迁移
+3. 确认该迁移写了 `downgrade`（没有 `downgrade` 的迁移等于没有回滚方案）
+
+> ⚠️ 涉及**删列、改列类型**的迁移，`downgrade` 可能无法还原数据本身（列能加回来，值回不来）。
+> 这类变更前必须做快照。完整流程见 [迁移手册](MIGRATIONS.md)。
 
 ### 密钥轮换
 

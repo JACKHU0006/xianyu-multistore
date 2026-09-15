@@ -22,6 +22,7 @@ from __future__ import annotations
 import asyncio
 import os
 from datetime import datetime, timezone
+from pathlib import Path
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
@@ -52,13 +53,67 @@ CARD_PLAIN = "A7F2-9K3M-XQ81-2ZP4"
 NOW = datetime.now(timezone.utc)
 
 
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+
+
+def _stamp_alembic_head(url: str) -> None:
+    """把库标记到 Alembic 基线，避免"建表"和"迁移"两套机制打架。
+
+    为什么必须有这一步：`create_all` 只建表、**不写 `alembic_version`**。如果播种
+    完后库里没有版本行，运维第一次执行 `alembic upgrade head` 会直接把基线迁移
+    重放一遍，撞上已存在的表并报 `table already exists` —— 而这个人只是想升级。
+
+    为什么要开线程：本模块已经在事件循环里跑（`_seed` 是 async），而
+    `command.stamp` 内部是 `asyncio.run(...)`，直接在循环里调用会抛
+    `asyncio.run() cannot be called from a running event loop`。丢到子线程里跑，
+    子线程没有自己的循环，asyncio.run 才能正常创建并关闭一个。注意**不能**把
+    现有循环传过去，那样 stamp 会挂在同一个循环上，和正在跑的会话互相干扰。
+
+    失败不影响播种：Alembic 没装、ini 缺失、或库被锁住时，只打印一行提示。
+    播种是给人「马上有数据可玩」用的，不该因为迁移工具的问题而整体失败。
+    """
+    def _run() -> None:
+        try:
+            from alembic import command
+            from alembic.config import Config
+        except ImportError:  # 只装了运行依赖、没装 alembic 的场景
+            print("[seed] 未安装 alembic，跳过版本标记（后续迁移请手工 stamp head）")
+            return
+
+        ini = PROJECT_ROOT / "alembic.ini"
+        if not ini.exists():
+            print(f"[seed] 未找到 {ini}，跳过版本标记")
+            return
+
+        # env.py 从环境变量读 URL。改成进程级环境变量是安全的：这里在子线程里
+        # 串行执行，且紧随其后的播种逻辑只用 url 参数，不再读 DATABASE_URL。
+        os.environ["DATABASE_URL"] = url
+        try:
+            command.stamp(Config(str(ini)), "head")
+        except Exception as exc:  # noqa: BLE001 - 版本标记失败不该拖垮播种
+            print(f"[seed] alembic 版本标记失败，已跳过：{exc}")
+        else:
+            print("[seed] 已标记 alembic 版本为 head")
+
+    import threading
+
+    t = threading.Thread(target=_run, name="alembic-stamp", daemon=True)
+    t.start()
+    t.join(timeout=30)
+    if t.is_alive():
+        print("[seed] alembic 版本标记超时（30s），已跳过")
+
+
 async def _seed(url: str, master_key: str) -> None:
     provider = LocalKeyProvider(master_key)
     configure_provider(provider)
 
     engine = create_async_engine(url, pool_pre_ping=True)
     async with engine.begin() as conn:
+        # 建表。注意：这里**只建不存在的表**，不会修改已有表结构。
+        # 改模型后请用 Alembic 迁移（见 migrations/ 与 docs/MIGRATIONS.md）。
         await conn.run_sync(Base.metadata.create_all)
+    _stamp_alembic_head(url)
     factory = async_sessionmaker(engine, expire_on_commit=False)
 
     async with factory() as db:
