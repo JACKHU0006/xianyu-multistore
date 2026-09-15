@@ -37,7 +37,7 @@ git push -u origin main
 ```
 
 `.gitignore` 已经挡住 `.env`、`*.db`、`node_modules/`、`dist/`。
-推送后 `.github/workflows/ci.yml` 会自动跑后端 565 项测试 + 前端构建。
+推送后 `.github/workflows/ci.yml` 会自动跑后端 589 项测试 + 前端构建。
 
 > ⚠️ 如果曾经把 `.env` 提交过，光删文件不够 —— 密钥已在 git 历史里，必须**轮换密钥**
 > （重新生成 `MASTER_KEY` 会导致已入库卡密解不开，需先导出）。

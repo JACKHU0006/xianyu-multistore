@@ -1,5 +1,9 @@
 # 多店铺 AI 客服与自动化运营系统
 
+[![CI](https://github.com/JACKHU0006/xianyu-multistore/actions/workflows/ci.yml/badge.svg)](https://github.com/JACKHU0006/xianyu-multistore/actions/workflows/ci.yml)
+[![tests](https://img.shields.io/badge/tests-589%20passed-brightgreen)](#测试)
+[![python](https://img.shields.io/badge/python-3.11%2B-blue)](https://www.python.org/)
+
 > 合规第一：本系统**不实现**账号矩阵、Cookie 池、人机验证码绕过、Xvfb 反检测等任何违反平台协议的功能。浏览器操作（人机验证）必须下沉到店主本机执行。
 
 ## 文档
@@ -193,12 +197,27 @@ GET /api/analytics/health?store_id=s1  # 单店
 
 ```bash
 python -m pytest tests/ -q
-# 567 passed
+# 589 passed
 ```
+
+默认跑 SQLite。要验证 PostgreSQL 上的真实行为（方言差异只在 PG 上暴露）：
+
+```bash
+docker run -d --name xy-pg -e POSTGRES_PASSWORD=postgres \
+  -e POSTGRES_DB=xianyu_test -p 5432:5432 postgres:16
+TEST_DATABASE_URL="postgresql+asyncpg://postgres:postgres@127.0.0.1:5432/xianyu_test" \
+  python -m pytest tests/ -q
+```
+
+> ⚠️ PG 模式下测试会 `drop_all / create_all`，务必指向**专用测试库**。
+> 详见 [迁移手册](docs/MIGRATIONS.md)。
 
 - 单元测试：纯函数（对账、规则、加密、状态机、JWT）
 - 集成测试：真实 HTTP 请求 + SQLite 文件库
 - Mock 测试：httpx MockTransport 注入（超时、5xx、垃圾 JSON）
+- 跨后端测试：SQLite / PostgreSQL 方言差异（时区、长度校验、JSON、LIKE）
+- 迁移测试：结构与模型一致性、可回滚、历史库可 stamp
+- 边界测试：外部输入超长/为空一律 422，且不落库
 
 ## 部署
 
