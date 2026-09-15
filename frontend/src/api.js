@@ -1,8 +1,9 @@
 /**
  * 后端接口封装
  *
- * 身份通过请求头传递。真实部署时这里应该换成从登录态拿 JWT ——
- * 现在的写法只是把契约形状摆出来，方便本地联调。
+ * 鉴权优先用登录拿到的 JWT（`Authorization: Bearer <token>`）。
+ * 仅当没有 token 时才退回 X-* 身份头 —— 那只在后端 `AUTH_MODE=dev`
+ * 时有效，生产环境（`AUTH_MODE=jwt`）一律 401。见下方 `authHeaders()`。
  */
 
 const BASE = import.meta.env.VITE_API_BASE_URL || ''

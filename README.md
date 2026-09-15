@@ -71,6 +71,7 @@ docker compose up --build
 | `inventory.py` | 卡密库存监控 + 自动下架 |
 | `off_platform_guard.py` | 站外引流拦截（零宽字符/全角/中文数字归一化对抗）|
 | `handoff.py` | 转人工：权重信号 + SLA + 工单队列 |
+| `idempotency.py` | 幂等去重：Redis SET NX EX + DB 唯一约束 + FailOpen 降级 |
 | `crypto.py` | 信封加密：KEK→HKDF→DEK→AES-256-GCM，AAD 绑定店铺 |
 | `llm_clients.py` | OpenAI 兼容客户端 + 多模态鉴真 |
 | `rbac.py` | 四角色权限（OWNER/MANAGER/AGENT/VIEWER），能力/范围分离 |
@@ -208,6 +209,23 @@ python -m pytest tests/ -q
 
 前端部署后把 `frontend/vercel.json` 里的 `REPLACE-WITH-YOUR-BACKEND` 换成后端域名，
 浏览器同源访问 `/api`，**后端无需开 CORS**（这也更安全）。
+
+### 最小上线路径（约 4 步）
+
+1. **建库**：Supabase 新建项目 → 拿 asyncpg 连接串 → `DATABASE_URL="<串>" python -m backend.seed_demo` 建表
+2. **起后端**：Render → New → Blueprint → 选本仓库 → 填 `sync: false` 的变量
+   （`MASTER_KEY` / `DATABASE_URL` / `CORS_ORIGINS`）。访问 `/health` 应返回 `{"status":"ok"}`
+3. **建 Redis（可选）**：Upstash 拿 `REDIS_URL`；不配也能跑，但多实例会重复处理消息
+4. **起前端**：Vercel → New Project → **Root Directory 选 `frontend`** →
+   把 `frontend/vercel.json` 里的后端占位域名换成第 2 步的 Render 域名
+
+**上线后立刻自检**（最重要的一条）：
+
+```bash
+# 无 token 必须 401 —— 如果返回 200，说明 JWT_SECRET 没生效，公网等于裸奔
+curl -s -o /dev/null -w "%{http_code}\n" https://<你的后端域名>/api/me
+# 期望：401
+```
 
 ## 合规声明
 
