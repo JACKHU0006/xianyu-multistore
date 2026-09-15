@@ -1,0 +1,623 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>多店铺智控控制台 · 原型</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  :root{
+    --bg:#0e1014; --panel:#151922; --panel2:#1b2130; --panel3:#212838;
+    --border:#242b39; --border2:#2e3648;
+    --text:#e7ebf3; --muted:#8a93a8; --dim:#5d6679;
+    --accent:#4f8cff; --accent-soft:rgba(79,140,255,.14);
+    --ok:#2fd18c; --ok-soft:rgba(47,209,140,.14);
+    --warn:#ffb020; --warn-soft:rgba(255,176,32,.14);
+    --danger:#ff5f6d; --danger-soft:rgba(255,95,109,.14);
+    --radius:12px;
+  }
+  html,body{height:100%}
+  body{
+    background:var(--bg);color:var(--text);
+    font-family:"PingFang SC","Microsoft YaHei",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+    font-size:14px;line-height:1.55;-webkit-font-smoothing:antialiased;
+  }
+  .app{display:flex;min-height:100vh}
+
+  /* ---------- Sidebar ---------- */
+  .sidebar{width:248px;flex:none;background:var(--panel);border-right:1px solid var(--border);
+    padding:18px 14px;display:flex;flex-direction:column;gap:20px;position:sticky;top:0;height:100vh;overflow:auto}
+  .brand{display:flex;align-items:center;gap:10px;padding:0 6px 4px}
+  .brand .logo{width:30px;height:30px;border-radius:9px;background:linear-gradient(135deg,#4f8cff,#7b5cff);
+    display:flex;align-items:center;justify-content:center;font-weight:700;font-size:15px;color:#fff}
+  .brand h1{font-size:14.5px;font-weight:600;letter-spacing:.2px}
+  .brand p{font-size:11px;color:var(--dim);letter-spacing:.3px}
+
+  .sec-label{font-size:11px;color:var(--dim);letter-spacing:1px;padding:0 8px;margin-bottom:8px;text-transform:uppercase}
+
+  .store-item{display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:9px;cursor:pointer;
+    border:1px solid transparent;transition:.15s}
+  .store-item:hover{background:var(--panel2)}
+  .store-item.active{background:var(--accent-soft);border-color:rgba(79,140,255,.35)}
+  .store-item .dot{width:7px;height:7px;border-radius:50%;flex:none}
+  .dot.ok{background:var(--ok);box-shadow:0 0 8px var(--ok)}
+  .dot.warn{background:var(--warn);box-shadow:0 0 8px var(--warn)}
+  .dot.danger{background:var(--danger);box-shadow:0 0 8px var(--danger)}
+  .store-item .nm{flex:1;min-width:0}
+  .store-item .nm b{display:block;font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .store-item .nm span{font-size:11px;color:var(--dim)}
+
+  .nav{display:flex;flex-direction:column;gap:2px}
+  .nav a{display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:9px;color:var(--muted);
+    text-decoration:none;font-size:13.5px;cursor:pointer;transition:.15s}
+  .nav a:hover{background:var(--panel2);color:var(--text)}
+  .nav a.active{background:var(--panel3);color:var(--text);font-weight:500}
+  .nav a .ic{width:16px;text-align:center;opacity:.9}
+  .nav a .tag{margin-left:auto;font-size:10.5px;background:var(--danger-soft);color:var(--danger);
+    padding:1px 7px;border-radius:20px;font-weight:600}
+
+  .compliance{margin-top:auto;background:var(--panel2);border:1px solid var(--border2);border-radius:10px;
+    padding:11px 12px;font-size:11.5px;color:var(--muted);line-height:1.6}
+  .compliance b{color:var(--warn);display:block;margin-bottom:3px;font-size:11.5px}
+
+  /* ---------- Main ---------- */
+  .main{flex:1;min-width:0;display:flex;flex-direction:column}
+  .topbar{height:66px;flex:none;border-bottom:1px solid var(--border);background:var(--panel);
+    display:flex;align-items:center;gap:16px;padding:0 26px;position:sticky;top:0;z-index:5}
+  .topbar h2{font-size:16px;font-weight:600}
+  .topbar .sub{font-size:11.5px;color:var(--dim);margin-top:1px}
+  .spacer{flex:1}
+  .pill{display:inline-flex;align-items:center;gap:6px;font-size:12px;padding:4px 11px;border-radius:20px;
+    border:1px solid var(--border2);color:var(--muted);background:var(--panel2)}
+  .pill.ok{color:var(--ok);border-color:rgba(47,209,140,.35);background:var(--ok-soft)}
+  .pill.warn{color:var(--warn);border-color:rgba(255,176,32,.35);background:var(--warn-soft)}
+  .pill.danger{color:var(--danger);border-color:rgba(255,95,109,.35);background:var(--danger-soft)}
+  .pill.accent{color:var(--accent);border-color:rgba(79,140,255,.35);background:var(--accent-soft)}
+
+  .view{padding:24px 26px 40px;display:flex;flex-direction:column;gap:18px}
+
+  .card{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden}
+  .card-h{padding:14px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px}
+  .card-h h3{font-size:13.5px;font-weight:600}
+  .card-h .desc{font-size:11.5px;color:var(--dim)}
+  .card-b{padding:16px 18px}
+
+  .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+  .stat{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);padding:15px 17px}
+  .stat .k{font-size:11.5px;color:var(--dim);margin-bottom:7px}
+  .stat .v{font-size:25px;font-weight:600;letter-spacing:-.5px}
+  .stat .d{font-size:11px;color:var(--muted);margin-top:3px}
+  .stat .v.ok{color:var(--ok)} .stat .v.warn{color:var(--warn)} .stat .v.danger{color:var(--danger)}
+
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th{text-align:left;font-weight:500;color:var(--dim);font-size:11.5px;letter-spacing:.4px;
+    padding:0 12px 10px;border-bottom:1px solid var(--border);white-space:nowrap}
+  td{padding:11px 12px;border-bottom:1px solid var(--border);vertical-align:middle}
+  tr:last-child td{border-bottom:none}
+  tbody tr:hover{background:var(--panel2)}
+  td .t1{font-weight:500}
+  td .t2{font-size:11.5px;color:var(--dim)}
+
+  input[type=text],input[type=number],select,textarea{
+    background:var(--bg);border:1px solid var(--border2);color:var(--text);border-radius:7px;
+    padding:6px 9px;font-size:12.5px;font-family:inherit;outline:none;transition:.15s;width:100%}
+  input:focus,select:focus,textarea:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+  input.w-num{width:82px;text-align:right;font-variant-numeric:tabular-nums}
+
+  .btn{border:1px solid var(--border2);background:var(--panel2);color:var(--text);border-radius:8px;
+    padding:7px 13px;font-size:12.5px;cursor:pointer;font-family:inherit;transition:.15s;white-space:nowrap}
+  .btn:hover{background:var(--panel3);border-color:#3b465c}
+  .btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+  .btn.primary:hover{background:#3d7cf5}
+  .btn.sm{padding:4px 10px;font-size:11.5px}
+  .btn.ghost{background:transparent}
+
+  .sw{position:relative;width:38px;height:21px;border-radius:20px;background:var(--panel3);
+    border:1px solid var(--border2);cursor:pointer;transition:.2s;flex:none}
+  .sw::after{content:"";position:absolute;top:2px;left:2px;width:15px;height:15px;border-radius:50%;
+    background:var(--muted);transition:.2s}
+  .sw.on{background:var(--ok-soft);border-color:rgba(47,209,140,.5)}
+  .sw.on::after{left:19px;background:var(--ok)}
+
+  .banner{display:flex;gap:13px;align-items:flex-start;padding:14px 17px;border-radius:var(--radius);
+    border:1px solid rgba(255,176,32,.35);background:var(--warn-soft);font-size:13px}
+  .banner.danger{border-color:rgba(255,95,109,.35);background:var(--danger-soft)}
+  .banner .bi{font-size:17px;line-height:1.2}
+  .banner b{display:block;margin-bottom:3px}
+  .banner p{color:var(--muted);font-size:12.5px}
+  .banner .acts{margin-top:10px;display:flex;gap:8px}
+
+  .log{display:flex;flex-direction:column;gap:12px;max-height:520px;overflow:auto;padding-right:4px}
+  .msg{display:flex;gap:10px}
+  .msg .av{width:30px;height:30px;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;
+    font-size:11.5px;font-weight:600;background:var(--panel3);color:var(--muted)}
+  .msg.buyer .av{background:var(--accent-soft);color:var(--accent)}
+  .msg.ai .av{background:var(--ok-soft);color:var(--ok)}
+  .msg .body{flex:1;min-width:0}
+  .msg .meta{font-size:11px;color:var(--dim);margin-bottom:4px;display:flex;gap:8px;align-items:center}
+  .msg .bubble{background:var(--panel2);border:1px solid var(--border);border-radius:10px;
+    padding:9px 12px;font-size:13px;display:inline-block;max-width:78%}
+  .msg.ai .bubble{background:var(--panel3);border-color:var(--border2)}
+  .intent{font-size:10px;padding:1px 7px;border-radius:20px;background:var(--accent-soft);color:var(--accent);font-weight:600}
+
+  .grid2{display:grid;grid-template-columns:1.35fr 1fr;gap:18px;align-items:start}
+  .kv{display:flex;justify-content:space-between;padding:9px 0;border-bottom:1px solid var(--border);font-size:13px}
+  .kv:last-child{border-bottom:none}
+  .kv .k{color:var(--muted)}
+  .kv .v{font-weight:500}
+
+  .empty{padding:34px;text-align:center;color:var(--dim);font-size:13px}
+  .hint{font-size:11.5px;color:var(--dim);margin-top:8px;line-height:1.6}
+  .row{display:flex;align-items:center;gap:10px}
+  .muted{color:var(--muted)}
+  .dim{color:var(--dim)}
+  .mono{font-family:"SF Mono",Consolas,Monaco,monospace;font-size:12px}
+  @media(max-width:1100px){.stats{grid-template-columns:repeat(2,1fr)}.grid2{grid-template-columns:1fr}.sidebar{width:210px}}
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="logo">闲</div>
+      <div><h1>多店铺智控台</h1><p>MULTI-STORE CONSOLE</p></div>
+    </div>
+
+    <div>
+      <div class="sec-label">我的店铺</div>
+      <div id="storeList"></div>
+      <button class="btn ghost sm" style="margin-top:8px;width:100%" onclick="alert('接入新店铺：\n\n1. 店主本人在自己的设备上完成扫码登录\n2. 系统仅保存加密后的会话引用（vault_ref），不落地明文 Cookie\n3. 新店铺自动获得独立租户空间，数据与其它店铺完全隔离')">+ 接入店铺</button>
+    </div>
+
+    <nav class="nav" id="nav"></nav>
+
+    <div class="compliance">
+      <b>⚠ 合规模式已开启</b>
+      本控制台不提供 Cookie 共享、设备伪装、代理轮换与验证码绕过。人机验证一律转人工，由店主本人处理。
+    </div>
+  </aside>
+
+  <main class="main">
+    <header class="topbar" id="topbar"></header>
+    <div class="view" id="view"></div>
+  </main>
+</div>
+
+<script>
+/* ============================================================
+   多店铺智控控制台 — 纯前端原型
+   数据为演示用 mock；真实实现见 backend/models.py 的多租户模型
+   ============================================================ */
+
+const DATA = {
+  stores: [
+    {
+      id: "s1", name: "数码优选店", account: "dy_8821", owner: "张三",
+      status: "ok", statusText: "在线", todayMsg: 42, pendingShip: 3, alerts: 0,
+      note: "主营数码配件，AI 客服已接管 92% 咨询",
+      products: [
+        { id:"p1", itemId:"720188445521", title:"iPhone 15 Pro 磁吸手机壳", price:39, min:29, ship:"包邮", sendType:"CARD_POOL", faq:6, stock:128, sold:412 },
+        { id:"p2", itemId:"720188445522", title:"爱奇艺黄金会员 年卡", price:128, min:99, ship:"虚拟发货", sendType:"CARD_POOL", faq:9, stock:64, sold:1203 },
+        { id:"p3", itemId:"720188445523", title:"PS5 游戏数字兑换码", price:89, min:65, ship:"虚拟发货", sendType:"CARD_POOL", faq:4, stock:37, sold:88 },
+        { id:"p4", itemId:"720188445524", title:"Type-C 100W 氮化镓充电器", price:79, min:62, ship:"包邮", sendType:"NONE", faq:5, stock:0, sold:230 }
+      ],
+      cards: [
+        { id:"c1", product:"爱奇艺黄金会员 年卡", content:"A7F2-9K3M-XQ81-2ZP4", used:false },
+        { id:"c2", product:"爱奇艺黄金会员 年卡", content:"B3D8-1L6N-WR44-8YT2", used:false },
+        { id:"c3", product:"爱奇艺黄金会员 年卡", content:"C9E1-4P7Q-ZM20-5KU7", used:true },
+        { id:"c4", product:"PS5 游戏数字兑换码", content:"PS5N-8823-XXQ7-1102", used:false },
+        { id:"c5", product:"iPhone 15 Pro 磁吸手机壳", content:"实物商品 · 无需卡密", used:false }
+      ],
+      monitors: [
+        { id:"m1", kw:"Switch OLED 日版", min:1200, max:1600, desire:5, ai:true, on:true, hits:3 },
+        { id:"m2", kw:"iPad mini 6 64G", min:1800, max:2400, desire:8, ai:true, on:true, hits:1 },
+        { id:"m3", kw:"AirPods Pro 2 正品", min:700, max:1050, desire:10, ai:false, on:false, hits:0 }
+      ],
+      logs: [
+        { who:"buyer", name:"买家 l***7", time:"18:12", intent:"BARGAIN", text:"这个会员年卡能便宜点吗？我买两张" },
+        { who:"ai", name:"AI 客服", time:"18:12", intent:"BARGAIN", text:"您好～两张的话给您走个批量价，256 元两张，等于 128 一张，已经是全年最低啦 😊" },
+        { who:"buyer", name:"买家 l***7", time:"18:13", intent:"DEAL", text:"行，那我拍了" },
+        { who:"ai", name:"AI 客服", time:"18:13", intent:"DEAL", text:"好的，拍下后系统会自动发卡密，注意查收私信～" },
+        { who:"buyer", name:"买家 m***2", time:"18:05", intent:"ENQUIRY", text:"手机壳支持无线充电吗" },
+        { who:"ai", name:"AI 客服", time:"18:05", intent:"ENQUIRY", text:"支持 MagSafe 磁吸，无线充电可以直接用，不影响散热。" }
+      ]
+    },
+    {
+      id: "s2", name: "会员卡券铺", account: "dy_6640", owner: "李四",
+      status: "ok", statusText: "在线", todayMsg: 87, pendingShip: 0, alerts: 0,
+      note: "纯虚拟商品，全自动发货，无需人工",
+      products: [
+        { id:"p5", itemId:"721003311001", title:"网易云黑胶 VIP 季卡", price:42, min:35, ship:"虚拟发货", sendType:"CARD_POOL", faq:7, stock:210, sold:3320 },
+        { id:"p6", itemId:"721003311002", title:"百度网盘超级会员 月卡", price:19, min:15, ship:"虚拟发货", sendType:"CARD_POOL", faq:5, stock:158, sold:1890 }
+      ],
+      cards: [
+        { id:"c6", product:"网易云黑胶 VIP 季卡", content:"WY42-KK81-2MZP-77QT", used:false },
+        { id:"c7", product:"网易云黑胶 VIP 季卡", content:"WY55-QQ20-9LRN-33VD", used:false },
+        { id:"c8", product:"百度网盘超级会员 月卡", content:"BD19-XX77-KQ02-8811", used:false }
+      ],
+      monitors: [
+        { id:"m4", kw:"腾讯视频 年卡", min:150, max:210, desire:6, ai:true, on:true, hits:2 }
+      ],
+      logs: [
+        { who:"buyer", name:"买家 k***9", time:"17:58", intent:"ENQUIRY", text:"下单后多久发卡密" },
+        { who:"ai", name:"AI 客服", time:"17:58", intent:"ENQUIRY", text:"支付成功后 5 秒内自动发送，如果没收到直接回我，我立刻补发。" },
+        { who:"buyer", name:"买家 k***9", time:"17:59", intent:"DEAL", text:"已拍，收到了，谢谢" }
+      ]
+    },
+    {
+      id: "s3", name: "二手数码小铺", account: "dy_2207", owner: "王五",
+      status: "warn", statusText: "待人工验证", todayMsg: 15, pendingShip: 1, alerts: 1,
+      note: "登录态需要店主本人重新验证后才能恢复监听",
+      products: [
+        { id:"p7", itemId:"721155522001", title:"二手 iPad Air 4 64G 蓝色", price:1980, min:1750, ship:"包邮", sendType:"NONE", faq:12, stock:1, sold:6 },
+        { id:"p8", itemId:"721155522002", title:"二手 Apple Watch S7 45mm", price:1150, min:980, ship:"包邮", sendType:"NONE", faq:8, stock:1, sold:11 }
+      ],
+      cards: [],
+      monitors: [
+        { id:"m5", kw:"MacBook Air M1 8+256", min:3200, max:4200, desire:5, ai:true, on:true, hits:4 }
+      ],
+      logs: [
+        { who:"buyer", name:"买家 x***1", time:"16:40", intent:"ENQUIRY", text:"iPad 电池健康度多少" },
+        { who:"ai", name:"AI 客服", time:"16:40", intent:"ENQUIRY", text:"电池健康 91%，循环 217 次，可以拍电池检测截图给您。" },
+        { who:"system", name:"系统", time:"16:52", intent:"RISK", text:"检测到账号需要人工身份验证，监听已挂起。请在手机端闲鱼 App 完成验证后点击「恢复监听」。" }
+      ]
+    }
+  ]
+};
+
+const VIEWS = [
+  { id:"dashboard", name:"总览", ic:"▦" },
+  { id:"products",  name:"商品与 AI 规则", ic:"◫" },
+  { id:"cards",     name:"卡密池", ic:"▤" },
+  { id:"monitors",  name:"捡漏监控", ic:"◎" },
+  { id:"logs",      name:"会话日志", ic:"✉" },
+  { id:"settings",  name:"店铺设置", ic:"⚙" }
+];
+
+let curStore = "s1";
+let curView = "dashboard";
+
+const $ = (id) => document.getElementById(id);
+const store = () => DATA.stores.find(s => s.id === curStore);
+
+/* ---------------- Sidebar ---------------- */
+function renderStoreList(){
+  $("storeList").innerHTML = store0().map(s => `
+    <div class="store-item ${s.id===curStore?'active':''}" onclick="switchStore('${s.id}')">
+      <span class="dot ${s.status}"></span>
+      <span class="nm"><b>${s.name}</b><span>${s.account} · ${s.owner}</span></span>
+    </div>`).join("");
+}
+function store0(){ return DATA.stores; }
+
+function renderNav(){
+  const alertCount = store().alerts;
+  $("nav").innerHTML = VIEWS.map(v => `
+    <a class="${v.id===curView?'active':''}" onclick="switchView('${v.id}')">
+      <span class="ic">${v.ic}</span><span>${v.name}</span>
+      ${v.id==="settings" && alertCount ? `<span class="tag">${alertCount}</span>` : ""}
+    </a>`).join("");
+}
+
+/* ---------------- Topbar ---------------- */
+function renderTopbar(){
+  const s = store();
+  $("topbar").innerHTML = `
+    <div>
+      <h2>${VIEWS.find(v=>v.id===curView).name}</h2>
+      <div class="sub">${s.name} · ${s.account} · 负责人 ${s.owner}</div>
+    </div>
+    <div class="spacer"></div>
+    <span class="pill">今日咨询 <b style="color:var(--text);margin-left:4px">${s.todayMsg}</b></span>
+    <span class="pill ${s.pendingShip?"warn":"ok"}">待发货 <b style="margin-left:4px">${s.pendingShip}</b></span>
+    <span class="pill ${s.status==='ok'?'ok':s.status==='warn'?'warn':'danger'}">
+      <span class="dot ${s.status}" style="width:6px;height:6px"></span>${s.statusText}
+    </span>`;
+}
+
+/* ---------------- Views ---------------- */
+function renderView(){
+  const fn = { dashboard:vDashboard, products:vProducts, cards:vCards,
+               monitors:vMonitors, logs:vLogs, settings:vSettings }[curView];
+  $("view").innerHTML = fn(store());
+}
+
+function vDashboard(s){
+  const online = DATA.stores.filter(x=>x.status==="ok").length;
+  const totalMsg = DATA.stores.reduce((a,b)=>a+b.todayMsg,0);
+  const totalPend = DATA.stores.reduce((a,b)=>a+b.pendingShip,0);
+  const riskStore = DATA.stores.filter(x=>x.status!=="ok");
+  return `
+    ${riskStore.length ? riskStore.map(x=>`
+      <div class="banner danger">
+        <span class="bi">⚠</span>
+        <div style="flex:1">
+          <b>${x.name} 需要人工处理</b>
+          <p>${x.note}。系统已挂起该店铺的监听队列，不会代过验证。</p>
+          <div class="acts"><button class="btn sm" onclick="switchStore('${x.id}');switchView('settings')">前往处理</button></div>
+        </div>
+      </div>`).join("") : ""}
+
+    <div class="stats">
+      <div class="stat"><div class="k">接入店铺</div><div class="v">${DATA.stores.length}</div><div class="d">${online} 家在线</div></div>
+      <div class="stat"><div class="k">今日咨询总量</div><div class="v">${totalMsg}</div><div class="d">AI 自动处理 94%</div></div>
+      <div class="stat"><div class="k">待发货订单</div><div class="v ${totalPend?'warn':'ok'}">${totalPend}</div><div class="d">虚拟商品自动秒发</div></div>
+      <div class="stat"><div class="k">卡密库存告警</div><div class="v ok">0</div><div class="d">全部高于安全水位</div></div>
+    </div>
+
+    <div class="card">
+      <div class="card-h"><h3>店铺矩阵</h3><span class="desc">各店铺状态与今日概况（数据相互隔离）</span></div>
+      <div class="card-b" style="padding-top:4px">
+        <table>
+          <thead><tr><th>店铺</th><th>负责人</th><th>状态</th><th>今日咨询</th><th>待发货</th><th>在售商品</th><th>监控任务</th></tr></thead>
+          <tbody>
+            ${DATA.stores.map(x=>`
+              <tr style="cursor:pointer" onclick="switchStore('${x.id}')">
+                <td><div class="t1">${x.name}</div><div class="t2 mono">${x.account}</div></td>
+                <td>${x.owner}</td>
+                <td><span class="pill ${x.status==='ok'?'ok':x.status==='warn'?'warn':'danger'}" style="padding:2px 9px;font-size:11.5px">${x.statusText}</span></td>
+                <td>${x.todayMsg}</td>
+                <td>${x.pendingShip}</td>
+                <td>${x.products.length}</td>
+                <td>${x.monitors.filter(m=>m.on).length} 开启</td>
+              </tr>`).join("")}
+          </tbody>
+        </table>
+      </div>
+    </div>`;
+}
+
+function vProducts(s){
+  return `
+    <div class="card">
+      <div class="card-h">
+        <h3>商品与 AI 议价规则</h3>
+        <span class="desc">底价由服务端二次校验，AI 返回低于底价的报价会被直接拒绝</span>
+        <div class="spacer" style="flex:1"></div>
+        <button class="btn sm primary" onclick="alert('新增商品：填写 itemId 后自动拉取标题与挂牌价')">+ 新增商品</button>
+      </div>
+      <div class="card-b" style="padding-top:4px">
+        ${s.products.length ? `
+        <table>
+          <thead><tr><th>商品</th><th>挂牌价</th><th>底价保护</th><th>议价空间</th><th>发货方式</th><th>FAQ</th><th>库存</th><th>已售</th></tr></thead>
+          <tbody>
+            ${s.products.map(p=>`
+              <tr>
+                <td style="max-width:280px"><div class="t1">${p.title}</div><div class="t2 mono">itemId ${p.itemId}</div></td>
+                <td><input class="w-num" type="number" value="${p.price}" onchange="editPrice('${p.id}','price',this.value)"></td>
+                <td><input class="w-num" type="number" value="${p.min}" onchange="editPrice('${p.id}','min',this.value)"></td>
+                <td><span class="muted">可降 ¥${(p.price-p.min).toFixed(0)}</span></td>
+                <td>${p.sendType==="NONE"
+                      ? '<span class="pill" style="padding:2px 9px;font-size:11.5px">人工发货</span>'
+                      : `<span class="pill accent" style="padding:2px 9px;font-size:11.5px">卡密自动</span>`}</td>
+                <td>${p.faq} 条</td>
+                <td>${p.sendType==="NONE" ? '<span class="dim">—</span>' : p.stock}</td>
+                <td>${p.sold}</td>
+              </tr>`).join("")}
+          </tbody>
+        </table>` : '<div class="empty">该店铺暂无在售商品</div>'}
+      </div>
+    </div>
+
+    <div class="grid2">
+      <div class="card">
+        <div class="card-h"><h3>议价阶梯（当前商品：爱奇艺黄金会员 年卡）</h3></div>
+        <div class="card-b">
+          <div class="kv"><span class="k">第 1 轮 · 买家首次砍价</span><span class="v">最多让 ¥8 → 报 ¥120</span></div>
+          <div class="kv"><span class="k">第 2 轮 · 买家继续压价</span><span class="v">最多让 ¥15 → 报 ¥113</span></div>
+          <div class="kv"><span class="k">第 3 轮 · 临界</span><span class="v">触底 → 报 ¥99 并停止让步</span></div>
+          <div class="kv"><span class="k">底价硬保护</span><span class="v" style="color:var(--danger)">¥99 · 低于此值直接拒绝</span></div>
+          <div class="kv"><span class="k">多件优惠</span><span class="v">≥2 件按 88% 计</span></div>
+          <div class="hint">议价结果由服务端在写入数据库前做最后一次校验：<span class="mono">if offered &lt; min_price: reject &amp; retry</span>。这一步不依赖大模型自觉。</div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-h"><h3>私有 FAQ 知识库</h3><span class="desc">命中即直接回复，不调用大模型</span></div>
+        <div class="card-b">
+          <div class="kv"><span class="k">支持哪些设备？</span><span class="v dim">命中 214 次</span></div>
+          <div class="kv"><span class="k">多久发货？</span><span class="v dim">命中 187 次</span></div>
+          <div class="kv"><span class="k">可以开发票吗？</span><span class="v dim">命中 42 次</span></div>
+          <div class="kv"><span class="k">售后期多久？</span><span class="v dim">命中 96 次</span></div>
+          <div style="margin-top:12px"><button class="btn sm" onclick="alert('FAQ 编辑：问题 + 标准答案，命中率实时统计')">编辑知识库</button></div>
+        </div>
+      </div>
+    </div>`;
+}
+
+function vCards(s){
+  const unused = s.cards.filter(c=>!c.used).length;
+  return `
+    <div class="stats" style="grid-template-columns:repeat(3,1fr)">
+      <div class="stat"><div class="k">卡密总库存</div><div class="v">${s.cards.length}</div></div>
+      <div class="stat"><div class="k">可用</div><div class="v ok">${unused}</div></div>
+      <div class="stat"><div class="k">已使用</div><div class="v">${s.cards.length-unused}</div></div>
+    </div>
+
+    <div class="banner">
+      <span class="bi">🔒</span>
+      <div>
+        <b>出库幂等保护</b>
+        <p>「取卡密 → 标记已用 → 发送给买家」三步在同一事务内完成，并对订单号加分布式锁。重连或重复回调不会重复发货。</p>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-h">
+        <h3>卡密池</h3>
+        <div class="spacer" style="flex:1"></div>
+        <button class="btn sm primary" onclick="alert('批量导入：支持粘贴文本，每行一条；导入时自动去重')">批量导入卡密</button>
+      </div>
+      <div class="card-b" style="padding-top:4px">
+        ${s.cards.length ? `
+        <table>
+          <thead><tr><th>所属商品</th><th>卡密内容</th><th>状态</th><th>操作</th></tr></thead>
+          <tbody>
+            ${s.cards.map(c=>`
+              <tr>
+                <td>${c.product}</td>
+                <td class="mono">${c.used ? c.content.replace(/./g,"•") : c.content}</td>
+                <td>${c.used
+                  ? '<span class="pill" style="padding:2px 9px;font-size:11.5px">已使用</span>'
+                  : '<span class="pill ok" style="padding:2px 9px;font-size:11.5px">可用</span>'}</td>
+                <td>${c.used ? '<span class="dim">—</span>'
+                  : `<button class="btn sm ghost" onclick="alert('复制卡密：${c.content}')">复制</button>`}</td>
+              </tr>`).join("")}
+          </tbody>
+        </table>` : '<div class="empty">该店铺未配置虚拟商品卡密池</div>'}
+      </div>
+    </div>`;
+}
+
+function vMonitors(s){
+  return `
+    <div class="banner">
+      <span class="bi">◎</span>
+      <div>
+        <b>捡漏监控 · 只做信息聚合</b>
+        <p>按关键词抓取公开在售信息，经价格区间与热度过滤后，再交给多模态模型判断是否值得看。仅推送提醒，不代拍、不代付。</p>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-h">
+        <h3>监控任务</h3>
+        <div class="spacer" style="flex:1"></div>
+        <button class="btn sm primary" onclick="alert('新增监控：关键词 + 价格区间 + 最小「几人想要」+ 是否开启 AI 鉴真')">+ 新增任务</button>
+      </div>
+      <div class="card-b" style="padding-top:4px">
+        ${s.monitors.length ? `
+        <table>
+          <thead><tr><th>关键词</th><th>价格区间</th><th>最低热度</th><th>AI 鉴真</th><th>累计命中</th><th>状态</th></tr></thead>
+          <tbody>
+            ${s.monitors.map(m=>`
+              <tr>
+                <td class="t1">${m.kw}</td>
+                <td class="mono">¥${m.min} – ¥${m.max}</td>
+                <td>${m.desire} 人想要</td>
+                <td>${m.ai ? '<span class="pill accent" style="padding:2px 9px;font-size:11.5px">已开启</span>' : '<span class="dim">关闭</span>'}</td>
+                <td>${m.hits}</td>
+                <td><div class="sw ${m.on?'on':''}" onclick="toggleMonitor('${m.id}')"></div></td>
+              </tr>`).join("")}
+          </tbody>
+        </table>` : '<div class="empty">该店铺暂无监控任务</div>'}
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-h"><h3>最近命中</h3><span class="desc">经 AI 鉴真后推送</span></div>
+      <div class="card-b">
+        <div class="kv"><span class="k">Switch OLED 日版 · 卖家自述 9 成新</span><span class="v" style="color:var(--ok)">¥1380 · 低于均价 22%</span></div>
+        <div class="kv"><span class="k">MacBook Air M1 · 电池循环 88 次</span><span class="v" style="color:var(--ok)">¥3650 · 低于均价 18%</span></div>
+        <div class="kv"><span class="k">iPad mini 6 · 描述含「屏有轻微划痕」</span><span class="v" style="color:var(--warn)">AI 标记瑕疵 · 已降权</span></div>
+        <div class="hint">AI 鉴真会识别「隐性瑕疵 / 非原装 / 二贩子文案特征」，命中风险标签的帖子降权或直接丢弃。</div>
+      </div>
+    </div>`;
+}
+
+function vLogs(s){
+  const avatar = (m) => m.who==="buyer" ? "买" : m.who==="ai" ? "AI" : "系";
+  return `
+    <div class="card">
+      <div class="card-h"><h3>会话日志</h3><span class="desc">${s.name} · 仅本店铺可见</span>
+        <div class="spacer" style="flex:1"></div>
+        <button class="btn sm" onclick="alert('导出：按时间范围导出本店铺会话记录（CSV）')">导出</button>
+      </div>
+      <div class="card-b">
+        <div class="log">
+          ${s.logs.map(m=>`
+            <div class="msg ${m.who}">
+              <div class="av">${avatar(m)}</div>
+              <div class="body">
+                <div class="meta"><span>${m.name}</span><span>${m.time}</span>
+                  <span class="intent" ${m.intent==="RISK"?'style="background:var(--danger-soft);color:var(--danger)"':''}>${m.intent}</span></div>
+                <div class="bubble">${m.text}</div>
+              </div>
+            </div>`).join("")}
+        </div>
+      </div>
+    </div>`;
+}
+
+function vSettings(s){
+  return `
+    ${s.status!=="ok" ? `
+    <div class="banner danger">
+      <span class="bi">⚠</span>
+      <div style="flex:1">
+        <b>登录态需要人工恢复</b>
+        <p>系统检测到该店铺需要身份验证，已挂起消息监听。请在您本人的手机端完成验证，然后回到这里点击恢复。控制台不会、也无法代为通过验证。</p>
+        <div class="acts">
+          <button class="btn sm primary" onclick="resumeStore()">已完成验证，恢复监听</button>
+          <button class="btn sm" onclick="alert('已发送提醒到店铺负责人：请尽快完成身份验证')">提醒负责人</button>
+        </div>
+      </div>
+    </div>` : ""}
+
+    <div class="grid2">
+      <div class="card">
+        <div class="card-h"><h3>店铺信息</h3></div>
+        <div class="card-b">
+          <div class="kv"><span class="k">店铺名称</span><span class="v">${s.name}</span></div>
+          <div class="kv"><span class="k">闲鱼账号</span><span class="v mono">${s.account}</span></div>
+          <div class="kv"><span class="k">负责人</span><span class="v">${s.owner}</span></div>
+          <div class="kv"><span class="k">当前状态</span><span class="v" style="color:${s.status==='ok'?'var(--ok)':'var(--warn)'}">${s.statusText}</span></div>
+          <div class="kv"><span class="k">监听方式</span><span class="v">店主本机会话 · 独立</span></div>
+          <div class="hint">本店铺与其它店铺之间不做任何凭据共享。登录态以加密引用（vault_ref）形式保存，控制台不落地明文。</div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-h"><h3>自动化开关</h3></div>
+        <div class="card-b">
+          <div class="kv"><span class="k">AI 自动回复</span><div class="sw on" onclick="this.classList.toggle('on')"></div></div>
+          <div class="kv"><span class="k">自动议价</span><div class="sw on" onclick="this.classList.toggle('on')"></div></div>
+          <div class="kv"><span class="k">卡密自动发货</span><div class="sw on" onclick="this.classList.toggle('on')"></div></div>
+          <div class="kv"><span class="k">捡漏提醒推送</span><div class="sw on" onclick="this.classList.toggle('on')"></div></div>
+          <div class="kv"><span class="k">夜间免打扰 (23:00–08:00)</span><div class="sw" onclick="this.classList.toggle('on')"></div></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-h"><h3>合规边界</h3><span class="desc">本控制台的能力范围</span></div>
+      <div class="card-b">
+        <div class="kv"><span class="k">✅ 单店独立会话，数据跨店隔离</span><span class="v dim">已启用</span></div>
+        <div class="kv"><span class="k">✅ AI 客服 / 议价 / 自动发货 / 捡漏提醒</span><span class="v dim">已启用</span></div>
+        <div class="kv"><span class="k">⛔ Cookie 共享、代理轮换、设备指纹伪装</span><span class="v" style="color:var(--danger)">不提供</span></div>
+        <div class="kv"><span class="k">⛔ 滑块 / 人机验证码自动绕过</span><span class="v" style="color:var(--danger)">不提供</span></div>
+        <div class="kv"><span class="k">⛔ 批量注册、批量养号</span><span class="v" style="color:var(--danger)">不提供</span></div>
+      </div>
+    </div>`;
+}
+
+/* ---------------- Actions ---------------- */
+function switchStore(id){ curStore = id; curView = "dashboard"; renderAll(); }
+function switchView(v){ curView = v; renderAll(); }
+
+function editPrice(pid, field, val){
+  const p = store().products.find(x=>x.id===pid);
+  if(!p) return;
+  const n = Number(val);
+  if(field==="min" && n > p.price){ alert("底价不能高于挂牌价"); renderView(); return; }
+  p[field] = n;
+  renderView();
+}
+
+function toggleMonitor(id){
+  const m = store().monitors.find(x=>x.id===id);
+  if(m){ m.on = !m.on; renderView(); }
+}
+
+function resumeStore(){
+  const s = store();
+  s.status = "ok"; s.statusText = "在线"; s.alerts = 0;
+  s.note = "登录态已由店主本人恢复，监听正常运行";
+  s.logs.push({ who:"system", name:"系统", time:"刚刚", intent:"SYSTEM",
+    text:"店主已完成身份验证，消息监听已恢复。" });
+  renderAll();
+}
+
+function renderAll(){ renderStoreList(); renderNav(); renderTopbar(); renderView(); }
+renderAll();
+</script>
+</body>
+</html>

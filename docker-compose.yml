@@ -1,0 +1,53 @@
+# 多店铺 AI 客服平台 —— 一键起全套（开发用 SQLite + 内存幂等即可跑）。
+#
+# 用法：
+#   1. cp .env.example .env   （务必改 MASTER_KEY！它是卡密信封加密的主密钥）
+#   2. docker compose up --build
+#   3. 打开 http://localhost:5173
+#
+# 生产数据库（Postgres）：把 .env 里的 DATABASE_URL 指向下面的 db 服务，
+# 并取消 db 服务的注释即可。Redis 是幂等去重的可选加速层，
+# 没配时退化为内存存储且 FailOpen（挂了也不卡死），不是单点。
+
+services:
+  backend:
+    build: .
+    environment:
+      MASTER_KEY: ${MASTER_KEY}
+      DATABASE_URL: ${DATABASE_URL:-sqlite+aiosqlite:///./app.db}
+      REDIS_URL: ${REDIS_URL:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://api.deepseek.com/v1}
+      QWEN_VL_API_KEY: ${QWEN_VL_API_KEY:-}
+    ports:
+      - "8000:8000"
+    depends_on:
+      - redis
+    restart: unless-stopped
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "5173:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    # 幂等去重层；无需持久卷，Redis 挂了后端自动放行（FailOpen）。
+
+  # db:
+  #   image: postgres:16-alpine
+  #   environment:
+  #     POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+  #     POSTGRES_DB: xianyu
+  #   volumes:
+  #     - pgdata:/var/lib/postgresql/data
+  #   ports:
+  #     - "5432:5432"
+  #   restart: unless-stopped
+
+# volumes:
+#   pgdata:

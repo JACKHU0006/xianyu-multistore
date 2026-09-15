@@ -1,0 +1,31 @@
+# 环境变量与密钥 —— 绝对不能提交
+# MASTER_KEY 一旦进仓库，等于整个卡密池裸奔
+.env
+.env.local
+.env.*.local
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+
+# 本地数据库
+*.db
+*.sqlite3
+
+# 前端
+node_modules/
+dist/
+.vite/
+*.log
+
+# 构建/工具临时产物
+*.timestamp-*.mjs
+.mangodisk-*
+
+# 编辑器
+.vscode/
+.idea/
+.DS_Store

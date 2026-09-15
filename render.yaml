@@ -1,0 +1,37 @@
+# Render Blueprint —— 以容器方式部署后端。
+#
+# 为什么用容器而不是 Serverless：后端是**有状态常驻进程**（内存里跑限流、
+# 重试队列、工单队列、成本核算），Serverless 每次冷启动状态清零，这些都会失效。
+#
+# 用法：Render 控制台 → New → Blueprint → 选本仓库。
+# 带 sync: false 的变量需要你在控制台手动填（密钥不写进仓库）。
+services:
+  - type: web
+    name: xianyu-multistore-api
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /health
+    plan: free
+    autoDeploy: true
+    envVars:
+      # 强制 JWT 模式：没有 Bearer token 一律 401
+      - key: AUTH_MODE
+        value: jwt
+      # Render 自动生成一个强随机值，不经过人手
+      - key: JWT_SECRET
+        generateValue: true
+      # 以下密钥需在控制台填写
+      - key: MASTER_KEY
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: REDIS_URL
+        sync: false
+      - key: CORS_ORIGINS
+        sync: false
+      - key: DEEPSEEK_API_KEY
+        sync: false
+      - key: QWEN_API_KEY
+        sync: false
+      - key: XIANYU_WEBHOOK_SECRET
+        sync: false
