@@ -314,6 +314,39 @@ def test_out_of_band_price_is_replaced_by_fallback():
     assert "越界" in result.note
 
 
+def test_bargain_without_product_context_is_not_released():
+    """
+    没有商品上下文时，模型给出的报价**不能**原样发出。
+
+    回归测试：原先的写法是 `if product is not None and intent == "BARGAIN"`，
+    商品查不到就整段跳过校验，AI 说"¥10 可以给您"会直接发给买家 —— 底价防护被静默绕过。
+    触发条件很常见：平台推送的 item_id 与本地登记不一致、商品被删、消息在非商品上下文。
+    """
+    async def scenario():
+        llm = llm_returning("亲，¥10 可以给您", offered_price=10.0, intent="BARGAIN")
+        # 刻意不传 product
+        return await handle_turn(msg("便宜点"), store_id="s1", llm=llm,
+                                 round_no=1, now=NOW)
+
+    result = run(scenario())
+    assert result.offered_price is None
+    assert result.reply == FALLBACK_REPLY, "无商品上下文时必须改用兜底话术，不能报出价格"
+    assert "10" not in (result.reply or "")
+    assert "缺少商品上下文" in result.note
+
+
+def test_offered_price_without_bargain_intent_is_also_guarded():
+    """intent 不是 BARGAIN 但带了价格，同样要拦住 —— 不能只信 intent 字段。"""
+    async def scenario():
+        llm = llm_returning("亲，¥10 给您", offered_price=10.0, intent="ENQUIRY")
+        return await handle_turn(msg("便宜点"), store_id="s1", product=PRODUCT, llm=llm,
+                                 round_no=1, now=NOW)
+
+    result = run(scenario())
+    assert result.offered_price is None
+    assert result.reply == FALLBACK_REPLY
+
+
 def test_explicit_human_request_hands_off_and_keeps_draft():
     async def scenario():
         llm = llm_returning("好的亲～")

@@ -503,19 +503,29 @@ async def handle_turn(
             action = Action.AI
 
             # 报价必须过服务端校验；越界就丢掉报价，不冒"文本与价格不一致"的险
-            if product is not None and outcome.decision.intent == "BARGAIN":
-                safe_price = clamp_offer(
-                    listed_price=product.listed_price,
-                    min_price=product.min_price,
-                    ladder=list(product.ladder),
-                    round_no=round_no,
-                    ai_offered=outcome.decision.offered_price,
-                )
-                if safe_price is None:
+            #
+            # 注意这里**不能**写成 `if product is not None and ...`：拿不到商品上下文时
+            # 若直接跳过校验，AI 的任意报价就会被原样发给买家 —— 平台推送的 item_id
+            # 与本地登记不一致、商品被删、或消息不在商品上下文里，都会走到这条路径，
+            # 结果是底价防护被静默绕过。所以只要模型给出了报价，就必须有东西兜住它。
+            if outcome.decision.intent == "BARGAIN" or outcome.decision.offered_price is not None:
+                if product is None:
+                    # 无商品上下文 → 无从判断报价是否合法，一律不报价
                     reply = FALLBACK_REPLY
-                    note = "AI 报价越界，已丢弃报价并改用兜底话术"
+                    note = "缺少商品上下文，无法校验报价，已丢弃报价并改用兜底话术"
                 else:
-                    offered_price = safe_price
+                    safe_price = clamp_offer(
+                        listed_price=product.listed_price,
+                        min_price=product.min_price,
+                        ladder=list(product.ladder),
+                        round_no=round_no,
+                        ai_offered=outcome.decision.offered_price,
+                    )
+                    if safe_price is None:
+                        reply = FALLBACK_REPLY
+                        note = "AI 报价越界，已丢弃报价并改用兜底话术"
+                    else:
+                        offered_price = safe_price
         else:
             action, reply = Action.AI, None
             note = "未配置大模型客户端"
