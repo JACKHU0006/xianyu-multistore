@@ -541,3 +541,97 @@ def test_jwt_principal_cannot_exceed_token_scope(jwt_client):
     h = {"Authorization": f"Bearer {token}"}
     assert jwt_client.get("/api/stores/s1/inventory", headers=h).status_code == 200
     assert jwt_client.get("/api/stores/s2/inventory", headers=h).status_code == 403
+
+
+# ===========================================================================
+# 十一、外部输入长度边界（SQLite 不校验 VARCHAR，PG 会拒绝）
+# ===========================================================================
+# 这一组测试防的是一类**在 SQLite 上永远发现不了**的问题。
+# 这些字段的值来自平台推送，长度不受我们控制；SQLite 会把超长字符串照单全收，
+# PostgreSQL 则直接抛 `StringDataRightTruncation` 变成 500 —— 而且是每条消息
+# 都 500，直到有人发现。所以必须由入参层拦住。
+#
+# 注意断言的是 422 而不是"写了但被截断"：这里是**拒绝**而不是截断。
+# 截断会把两个不同买家折叠成同一个 buyer_id，对账和去重都会算错，
+# 属于静默的数据损坏，比报错更难查。
+
+
+def test_overlong_buyer_id_is_rejected_with_422(client, tmp_path):
+    r = post_msg(client, AGENT, buyer_id="B" * 500)
+    assert r.status_code == 422
+    # 不能把超长原值回显到错误信息里（否则 5000 字的 ID 会灌进日志）
+    assert "B" * 100 not in r.text
+
+
+def test_overlong_msg_id_is_rejected_with_422(client):
+    assert post_msg(client, AGENT, msg_id="M" * 500).status_code == 422
+
+
+def test_overlong_item_id_is_rejected_with_422(client):
+    assert post_msg(client, AGENT, item_id="I" * 500).status_code == 422
+
+
+def test_overlong_store_id_is_rejected_with_422(client):
+    assert post_msg(client, AGENT, store_id="S" * 500).status_code == 422
+
+
+def test_empty_buyer_id_is_rejected(client):
+    # 空 buyer_id 不是"没填"，而是平台漏推 —— 让它进库会让对话直接错乱
+    assert post_msg(client, AGENT, buyer_id="").status_code == 422
+
+
+def test_boundary_lengths_are_still_accepted(client):
+    # 正好卡在上限的字段必须放行，不能把限制做得过紧
+    r = post_msg(client, AGENT, buyer_id="B" * 64, msg_id="M" * 128, item_id="I" * 64)
+    assert r.status_code == 200
+
+
+def test_reconcile_overlong_order_id_is_rejected(client):
+    r = client.post(
+        "/api/stores/s1/reconcile",
+        json={"snapshot": [{"order_id": "P" * 300, "status": "PAID", "amount": 128.0}]},
+        headers=OWNER,
+    )
+    assert r.status_code == 422
+
+
+def test_reconcile_overlong_status_is_rejected(client):
+    r = client.post(
+        "/api/stores/s1/reconcile",
+        json={"snapshot": [{"order_id": "PL-9", "status": "X" * 100, "amount": 1.0}]},
+        headers=OWNER,
+    )
+    assert r.status_code == 422
+
+
+def test_adapter_overlong_field_yields_422_not_500(client):
+    """原始平台报文路径：超长字段应该是干净的 422，而不是未捕获的 500。
+
+    500 会让平台按重试策略反复重推同一条消息，每次都再失败一次 —— 刷屏式报错。
+    """
+    r = client.post(
+        "/api/webhook/xianyu?store_id=s1",
+        json={
+            "event_type": "message",
+            "data": {"buyer_id": "B" * 300, "content": "在吗", "msg_id": "M-1",
+                     "item_id": "ITEM-1"},
+        },
+        headers=OWNER,
+    )
+    assert r.status_code == 422
+    assert "upper" in r.text or "上限" in r.text
+
+
+def test_adapter_normal_payload_still_works(client):
+    # 收紧校验不能误伤正常报文
+    r = client.post(
+        "/api/webhook/xianyu?store_id=s1",
+        json={
+            "event_type": "message",
+            "data": {"buyer_id": "b-normal", "content": "在吗", "msg_id": "M-2",
+                     "item_id": "ITEM-1"},
+        },
+        headers=OWNER,
+    )
+    assert r.status_code == 200
+    assert r.json()["action"] in ("AI_REPLY", "FAQ_HIT", "HANDOFF")

@@ -17,7 +17,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -85,43 +85,64 @@ class Container:
 # 请求/响应模型
 # ===========================================================================
 
+# ---------------------------------------------------------------------------
+# 外部标识的长度上限，必须与 models.py 里的列宽一致
+# ---------------------------------------------------------------------------
+# 为什么要在入口就卡住：这些字段的值来自**平台推送**（webhook 原始报文、对账快照），
+# 长度不受我们控制。而 SQLite 不校验 VARCHAR 长度，PostgreSQL 严格拒绝 ——
+# 于是同一个超长 ID 在本地测试里一路绿灯，上生产却抛
+# `StringDataRightTruncation` 变成 500，而且是**每条消息都 500**，直到有人发现。
+# 在入参层返回 422 而不是让数据库报错，好处是：错误信息能指明是哪个字段、
+# 并且不会把半截数据写进库。
+#
+# 注意这里是**拒绝**而不是截断：截断会把两个不同买家折叠成同一个 buyer_id，
+# 对账和去重都会算错，属于静默的数据损坏，比报错更难查。
+MSG_ID_MAX = 128     # message_log.platform_msg_id
+BUYER_ID_MAX = 64    # message_log.buyer_id / orders.buyer_id / shipment_record.buyer_id
+ORDER_ID_MAX = 64    # orders.platform_order_id / shipment_record.order_id
+ITEM_ID_MAX = 64     # product.item_id
+STORE_ID_MAX = 36    # store.id
+PRODUCT_ID_MAX = 36  # product.id
+
+
 class MessageIn(BaseModel):
-    store_id: str
-    buyer_id: str
+    store_id: str = Field(min_length=1, max_length=STORE_ID_MAX)
+    buyer_id: str = Field(min_length=1, max_length=BUYER_ID_MAX)
     content: str = Field(min_length=1, max_length=2000)
-    msg_id: Optional[str] = None
-    item_id: Optional[str] = None
+    msg_id: Optional[str] = Field(default=None, max_length=MSG_ID_MAX)
+    item_id: Optional[str] = Field(default=None, max_length=ITEM_ID_MAX)
     round_no: int = Field(default=1, ge=1, le=20)
     unresolved_turns: int = Field(default=0, ge=0)
     conv_state: str = ConvState.AI
 
 
 class OrderViewIn(BaseModel):
-    order_id: str
-    status: str
+    order_id: str = Field(min_length=1, max_length=ORDER_ID_MAX)
+    status: str = Field(max_length=20)
     amount: float
     paid_at: Optional[datetime] = None
     shipped_at: Optional[datetime] = None
 
 
 class ReconcileIn(BaseModel):
-    snapshot: list[OrderViewIn] = Field(default_factory=list)
+    # 快照来自平台对账接口，条数也不该由对方随意决定 —— 一次几千条会打满内存
+    snapshot: list[OrderViewIn] = Field(default_factory=list, max_length=5000)
 
 
 class RefundIn(BaseModel):
-    reason: str
+    reason: str = Field(min_length=1, max_length=255)
     delivered: bool
     card_revealed: bool = False
     duplicate_order: bool = False
-    total_orders: int = 0
-    refunds: int = 0
-    off_platform_strikes: int = 0
-    complaints: int = 0
+    total_orders: int = Field(default=0, ge=0)
+    refunds: int = Field(default=0, ge=0)
+    off_platform_strikes: int = Field(default=0, ge=0)
+    complaints: int = Field(default=0, ge=0)
 
 
 class ProductStatsIn(BaseModel):
-    product_id: str
-    title: str
+    product_id: str = Field(min_length=1, max_length=PRODUCT_ID_MAX)
+    title: str = Field(max_length=255)  # product.title
     inquiries: int = Field(default=0, ge=0)
     bargains: int = Field(default=0, ge=0)
     orders: int = Field(default=0, ge=0)
@@ -131,12 +152,12 @@ class ProductStatsIn(BaseModel):
 
 
 class DiagnoseIn(BaseModel):
-    products: list[ProductStatsIn] = Field(default_factory=list)
+    products: list[ProductStatsIn] = Field(default_factory=list, max_length=2000)
 
 
 class ListingIn(BaseModel):
-    item_id: str
-    title: str
+    item_id: str = Field(min_length=1, max_length=ITEM_ID_MAX)
+    title: str = Field(max_length=255)
     price: float = Field(gt=0)
     desire_count: int = Field(default=0, ge=0)
     description: str = ""
@@ -144,9 +165,9 @@ class ListingIn(BaseModel):
 
 
 class SourcingIn(BaseModel):
-    keyword: str
+    keyword: str = Field(min_length=1, max_length=128)  # monitor_rule.keyword
     market_price: float = Field(gt=0)
-    listings: list[ListingIn] = Field(default_factory=list)
+    listings: list[ListingIn] = Field(default_factory=list, max_length=5000)
     min_price: Optional[float] = None
     max_price: Optional[float] = None
     min_desire: int = Field(default=0, ge=0)

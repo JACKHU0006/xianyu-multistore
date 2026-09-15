@@ -22,6 +22,7 @@ from contextlib import asynccontextmanager
 from typing import Optional
 
 from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
@@ -148,6 +149,27 @@ def create_app(
     async def _missing_key(request: Request, exc: KeyMaterialMissing) -> JSONResponse:
         # 密钥没配是配置问题，不是用户的问题 —— 但也不能把细节吐给调用方
         return JSONResponse(status_code=503, content={"detail": "密钥服务不可用"})
+
+    @app.exception_handler(RequestValidationError)
+    async def _invalid_input(request: Request, exc: RequestValidationError) -> JSONResponse:
+        """校验失败时**不回显原始输入值**。
+
+        FastAPI 默认会把出错的原值整段放进 `input` 字段返回。但我们卡长度限制的
+        那几个字段（buyer_id/msg_id/order_id）本身就可能长得离谱 —— 平台推一个
+        5000 字的 ID 进来，默认行为会把它原样塞进响应和访问日志，一个小问题被
+        放大成大问题（日志刷屏、响应体膨胀）。
+
+        这里只保留字段路径和原因，去掉 `input`。
+        """
+        errors = []
+        for err in exc.errors():
+            item = {"loc": list(err.get("loc", ())), "msg": err.get("msg", "不合法"),
+                    "type": err.get("type", "value_error")}
+            limit = (err.get("ctx") or {}).get("max_length")
+            if limit is not None:
+                item["max_length"] = limit
+            errors.append(item)
+        return JSONResponse(status_code=422, content={"detail": errors})
 
     # 作为 uvicorn --factory 入口时，容器不会被传进来，这里按环境变量装配一个。
     #

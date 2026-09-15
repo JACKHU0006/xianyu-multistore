@@ -19,8 +19,9 @@
 用法：
   from backend.adapters import XianyuAdapter
   adapter = XianyuAdapter(sign_secret=os.environ.get("XIANYU_WEBHOOK_SECRET"))
-  message_in = adapter.parse_message(await request.body(), request.headers)
-  # 然后直接调 pipeline 或 api.webhook_message
+  msg = adapter.parse_message(await request.body(), request.headers)
+  # msg 是平台侧的原始字段（XianyuMessage）。store_id 不在报文里 ——
+  # 它由 URL 路由/调用方决定，所以拼装 MessageIn 是调用方的事。
 """
 from __future__ import annotations
 
@@ -29,7 +30,7 @@ import hmac
 import json
 from typing import Any, Optional, Protocol
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, ValidationError
 
 # 注意：MessageIn 定义在 api.py，而 api.py 又会 import 本模块（注册平台入口），
 # 顶层互相 import 会形成循环。这里只在函数内延迟导入，运行时 api 早已加载完毕。
@@ -38,7 +39,7 @@ from pydantic import BaseModel
 class PlatformAdapter(Protocol):
     """平台适配器协议。"""
 
-    def parse_message(self, body: bytes, headers: dict[str, str]) -> MessageIn:
+    def parse_message(self, body: bytes, headers: dict[str, str]) -> "XianyuMessage":
         ...
 
     def verify_signature(self, body: bytes, headers: dict[str, str]) -> bool:
@@ -72,13 +73,18 @@ def _require_keys(d: dict, *keys: str) -> None:
 # ===========================================================================
 
 class XianyuMessage(BaseModel):
-    """闲鱼消息推送的字段子集。实际字段名以官方文档为准。"""
+    """闲鱼消息推送的字段子集。实际字段名以官方文档为准。
 
-    buyer_id: str
-    content: str
-    msg_id: str
-    item_id: Optional[str] = None
-    order_id: Optional[str] = None
+    长度上限与 `api.py` 的入参模型保持一致 —— 这是**原始报文**进入系统的第一站，
+    也是最该卡住的地方：平台推什么长度我们控制不了，而 SQLite 不校验 VARCHAR、
+    PostgreSQL 严格拒绝，超长值在本地测试里察觉不到，只会在生产上炸成 500。
+    """
+
+    buyer_id: str = Field(min_length=1, max_length=64)
+    content: str = Field(min_length=1, max_length=2000)
+    msg_id: str = Field(min_length=1, max_length=128)
+    item_id: Optional[str] = Field(default=None, max_length=64)
+    order_id: Optional[str] = Field(default=None, max_length=64)
     sent_at: Optional[int] = None  # 毫秒时间戳
 
 
@@ -106,9 +112,7 @@ class XianyuAdapter:
         computed = hmac.new(self.sign_secret, body, hashlib.sha256).hexdigest()
         return hmac.compare_digest(expected, computed)
 
-    def parse_message(self, body: bytes, headers: dict[str, str]) -> "MessageIn":
-        from .api import MessageIn  # 延迟导入，避免与 api 的循环依赖
-
+    def parse_message(self, body: bytes, headers: dict[str, str]) -> "XianyuMessage":
         if not self.verify_signature(body, headers):
             raise SignatureMismatch("闲鱼 webhook 签名校验失败")
 
@@ -124,21 +128,21 @@ class XianyuAdapter:
 
         # 字段映射：把闲鱼字段名转成内部字段名
         data = payload.get("data") or payload
-        msg = XianyuMessage(
-            buyer_id=_extract(data, "buyer_id", "buyer_open_id", "user_id"),
-            content=_extract(data, "content", "text", "message"),
-            msg_id=_extract(data, "msg_id", "message_id", "id"),
-            item_id=_extract(data, "item_id", "goods_id", "product_id", default=None),
-            order_id=_extract(data, "order_id", "trade_id", default=None),
-        )
+        try:
+            msg = XianyuMessage(
+                buyer_id=_extract(data, "buyer_id", "buyer_open_id", "user_id"),
+                content=_extract(data, "content", "text", "message"),
+                msg_id=_extract(data, "msg_id", "message_id", "id"),
+                item_id=_extract(data, "item_id", "goods_id", "product_id", default=None),
+                order_id=_extract(data, "order_id", "trade_id", default=None),
+            )
+        except ValidationError as exc:
+            # 平台推了超长/空字段。这里是外部输入的边界，必须转成 422 ——
+            # 让它冒出去会变成 500，平台看到 5xx 会按重试策略反复重推同一条，
+            # 而每次重推都会再失败一次，形成刷屏式报错。
+            raise AdapterError(f"推送字段不合法：{_summarize_validation_error(exc)}") from exc
 
-        return MessageIn(
-            store_id="",  # 由调用方根据 webhook 路由或 payload 中的店铺信息填入
-            buyer_id=msg.buyer_id,
-            content=msg.content,
-            msg_id=msg.msg_id,
-            item_id=msg.item_id,
-        )
+        return msg
 
 
 # ===========================================================================
@@ -155,6 +159,22 @@ def _extract(data: dict, *keys: str, default: Any = _MISSING) -> Any:
     if default is not _MISSING:
         return default
     raise AdapterError(f"字段缺失：尝试 {keys} 均未命中")
+
+
+def _summarize_validation_error(exc: ValidationError) -> str:
+    """只取字段名和原因，不把超长原值回显。
+
+    为什么不直接 `str(exc)`：pydantic 会把出错的原值整段塞进消息里。而我们正在
+    处理的恰好是「字段过长」这种情况 —— 拿 5000 字的买家 ID 填日志和错误响应，
+    只会把小问题放大成大问题。这里只保留长度上限，够定位就行。
+    """
+    parts: list[str] = []
+    for err in exc.errors():
+        loc = ".".join(str(x) for x in err.get("loc", ())) or "?"
+        msg = err.get("msg", "不合法")
+        limit = err.get("ctx", {}).get("max_length")
+        parts.append(f"{loc}（上限 {limit}）" if limit else f"{loc}：{msg}")
+    return "；".join(parts)
 
 
 # ===========================================================================
