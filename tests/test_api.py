@@ -41,6 +41,11 @@ async def _seed(url: str) -> None:
 
     factory = async_sessionmaker(engine, expire_on_commit=False)
     async with factory() as db:
+        # 插入顺序很重要：SQLite **默认不强制**外键，而 PostgreSQL 强制。
+        # 原先这里用一个 add_all() 把所有行一次性提交，指望 SQLAlchemy 按依赖
+        # 自动排序 INSERT —— 在 SQLite 上"能过"，但 PG 上一旦 orders 排在 store
+        # 前面就会抛 ForeignKeyViolationError（实测就是这么炸的）。
+        # 显式分两段 flush：先父后子，行为在两种后端上才一致。
         db.add_all([
             Tenant(id="t1", name="演示团队"),
             User(id="u1", tenant_id="t1", username="owner",
@@ -50,15 +55,21 @@ async def _seed(url: str) -> None:
                   platform_account="dy_6640", owner_name="李四", status="ONLINE"),
             Store(id="s2", tenant_id="t1", name="数码优选店",
                   platform_account="dy_8821", owner_name="张三", status="ONLINE"),
+        ])
+        await db.flush()   # 先落 tenant / user / store
+
+        db.add_all([
             Product(id="p1", tenant_id="t1", store_id="s1", item_id="ITEM-1",
                     title="爱奇艺黄金会员 年卡", listed_price=128.0, min_price=99.0,
                     send_type="CARD_POOL", low_stock_threshold=2,
                     bargain_ladder=[0.05, 0.12, 0.23], shipping_policy="虚拟发货"),
-            FaqRule(id="f1", tenant_id="t1", product_id="p1",
-                    question="多久发货", answer="支付成功后 5 秒内自动发卡密。"),
             Order(id="o1", tenant_id="t1", store_id="s1", product_id="p1",
                   platform_order_id="PL-1", buyer_id="b1", amount=128.0, status="PAID"),
         ])
+        await db.flush()   # 再落 product / order（它们引用 store）
+
+        db.add(FaqRule(id="f1", tenant_id="t1", product_id="p1",
+                       question="多久发货", answer="支付成功后 5 秒内自动发卡密。"))
         for i in range(2):
             db.add(CardPool(
                 tenant_id="t1", product_id="p1",
