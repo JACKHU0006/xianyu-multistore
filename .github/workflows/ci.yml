@@ -56,13 +56,14 @@ jobs:
       - name: 安装依赖
         run: pip install -r requirements.txt
 
-      # 注意：PG 模式下测试会 drop_all/create_all，只能对准专用测试库，
-      # 所以这里写死 xianyu_test，不要复用任何有数据的库。
-      - name: 运行测试（PostgreSQL 后端）
-        env:
-          TEST_DATABASE_URL: postgresql+asyncpg://postgres:postgres@127.0.0.1:5432/xianyu_test
-        run: python -m pytest tests/ -q
-
+      # 迁移校验必须放在跑测试**之前**。
+      #
+      # 原因：测试用例会 drop_all/create_all，跑完之后库里是「有表但没有
+      # alembic_version」的状态。此时再执行 `alembic upgrade head`，基线迁移会
+      # 被重放一遍，直接撞上已存在的表报 `table already exists` ——
+      # 这正是 docs/MIGRATIONS.md 里记的那个坑。
+      # 放在前面就简单了：service 刚起来的库是空的，upgrade 能真实地建出全部表，
+      # 从而验证迁移本身（而不是被前面的测试结果掩盖）。
       - name: 校验迁移在 PostgreSQL 上可用
         env:
           DATABASE_URL: postgresql+asyncpg://postgres:postgres@127.0.0.1:5432/xianyu_test
@@ -71,6 +72,13 @@ jobs:
           python -m alembic current
           python -m alembic downgrade base
           python -m alembic upgrade head
+
+      # 注意：PG 模式下测试会 drop_all/create_all，只能对准专用测试库，
+      # 所以这里写死 xianyu_test，不要复用任何有数据的库。
+      - name: 运行测试（PostgreSQL 后端）
+        env:
+          TEST_DATABASE_URL: postgresql+asyncpg://postgres:postgres@127.0.0.1:5432/xianyu_test
+        run: python -m pytest tests/ -q
 
   frontend:
     name: 前端构建
